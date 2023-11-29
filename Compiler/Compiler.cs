@@ -1,7 +1,7 @@
 ﻿using Compiler.IO;
+using Compiler.Nodes;
 using Compiler.SyntacticAnalysis;
 using Compiler.Tokenization;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using static System.Console;
@@ -57,9 +57,11 @@ namespace Compiler
 
             // Parse
             Write("Parsing...");
-            Parser.Parse(tokens);
+            ProgramNode tree = Parser.Parse(tokens);
             if (Reporter.HasErrors) return;
             WriteLine("Done");
+
+            WriteLine(TreePrinter.ToString(tree));
         }
 
         /// <summary>
