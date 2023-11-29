@@ -1,6 +1,9 @@
 ﻿using Compiler.IO;
 using Compiler.Nodes;
+using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
+using System.Xml.Linq;
 using static System.Reflection.BindingFlags;
 
 namespace Compiler.SemanticAnalysis
@@ -80,11 +83,14 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(assignCommand.Expression);
             if (!(assignCommand.Identifier.Declaration is IVariableDeclarationNode varDeclaration))
             {
-                // Error - identifier is not a variable
+                Reporter.ReportError($"Trying to assign to something which is not a variable " +
+                    $"at line {assignCommand.Position.LineNumber}, column {assignCommand.Position.PositionInLine}" +
+                    $": {assignCommand.Identifier.IdentifierToken.Spelling}");
             }
             else if (varDeclaration.EntityType != assignCommand.Expression.Type)
             {
-                // Error - expression is wrong type for the variable
+                Reporter.ReportError($"Trying to assign a {assignCommand.Expression.Type.Name} to a {varDeclaration.EntityType.Name} variable" +
+                    $"at line {assignCommand.Position.LineNumber}, column {assignCommand.Position.PositionInLine}");
             }
         }
 
@@ -106,43 +112,46 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(callCommand.Parameter);
             if (!(callCommand.Identifier.Declaration is FunctionDeclarationNode functionDeclaration))
             {
-                // Error: Identifier is not a function
+                Reporter.ReportError($"{callCommand.Identifier.IdentifierToken.Spelling} is being used as a function but is not one " +
+                    $"at line {callCommand.Position.LineNumber}, column {callCommand.Position.PositionInLine}");
             }
             else if (GetNumberOfArguments(functionDeclaration.Type) == 0)
             {
                 if (!(callCommand.Parameter is BlankParameterNode))
                 {
-                    // Error: function takes no arguments but is called with one
+                    Reporter.ReportError($"{functionDeclaration.Name} takes no arguments but is being called with some " +
+                        $"at line {callCommand.Position.LineNumber}, column {callCommand.Position.PositionInLine}");
                 }
             }
             else
             {
                 if (callCommand.Parameter is BlankParameterNode)
                 {
-                    // Error: function takes an argument but is called without one
+                    Reporter.ReportError($"{functionDeclaration.Name} takes an argument but is being called without any " +
+                        $"at line {callCommand.Position.LineNumber}, column {callCommand.Position.PositionInLine}");
                 }
                 else
                 {
                     if (GetArgumentType(functionDeclaration.Type, 0) != callCommand.Parameter.Type)
                     {
-                        // Error: Function called with parameter of the wrong type
-                    }
-                    if (ArgumentPassedByReference(functionDeclaration.Type, 0) && !(callCommand.Parameter is VarParameterNode))
-                    {
-                        // Error: Function requires a var parameter but has been given an expression parameter
+                        Reporter.ReportError($"{functionDeclaration.Name} expects a " +
+                            $"{functionDeclaration.Type.Parameters[0].type.Name} as a parameter but was given a {callCommand.Parameter.Type.Name} " +
+                            $"at line {functionDeclaration.Position.LineNumber}, column {functionDeclaration.Position.PositionInLine}");
                     }
                     if (ArgumentPassedByReference(functionDeclaration.Type, 0))
                     {
                         if (!(callCommand.Parameter is VarParameterNode))
                         {
-                            // Error: Function requires a var parameter but has been given an expression parameter
+                            Reporter.ReportError($"{functionDeclaration.Name} expects a var parameter but was given an expression " +
+                                $"at line {functionDeclaration.Position.LineNumber}, column {functionDeclaration.Position.PositionInLine}");
                         }
                     }
                     else
                     {
                         if (!(callCommand.Parameter is ExpressionParameterNode))
                         {
-                            // Error: Function requires an expression parameter but has been given a var parameter
+                            Reporter.ReportError($"{functionDeclaration.Name} expects an expression but was given a var parameter " +
+                                $"at line {functionDeclaration.Position.LineNumber}, column {functionDeclaration.Position.PositionInLine}");
                         }
                     }
                 }
@@ -160,7 +169,8 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(ifCommand.ElseCommand);
             if (ifCommand.Expression.Type != StandardEnvironment.BooleanType)
             {
-                // Error: expression needs to be a boolean
+                Reporter.ReportError($"Condition in if command is not a boolean " +
+                    $"at line {ifCommand.Position.LineNumber}, column {ifCommand.Position.PositionInLine}");
             }
         }
 
@@ -194,7 +204,8 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(whileCommand.Command);
             if (whileCommand.Expression.Type != StandardEnvironment.BooleanType)
             {
-                // Error: expression needs to be a boolean
+                Reporter.ReportError($"Condition in while command is not a boolean " +
+                    $"at line {whileCommand.Position.LineNumber}, column {whileCommand.Position.PositionInLine}");
             }
         }
 
@@ -243,7 +254,8 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(binaryExpression.RightExpression);
             if (!(binaryExpression.Op.Declaration is BinaryOperationDeclarationNode opDeclaration))
             {
-                // Error: operator is not a binary operator
+                Reporter.ReportError($"{binaryExpression.Op.OperatorToken.Spelling} is being used as a binary operator but is not one " +
+                    $"at line {binaryExpression.Position.LineNumber}, column {binaryExpression.Position.PositionInLine}");
             }
             else
             {
@@ -251,18 +263,24 @@ namespace Compiler.SemanticAnalysis
                 {
                     if (binaryExpression.LeftExpression.Type != binaryExpression.RightExpression.Type)
                     {
-                        // Error: left and right hand side arguments not the same type
+                        Reporter.ReportError($"{opDeclaration.Name} expects arguments of the same type but received " +
+                            $"{binaryExpression.LeftExpression.Type.Name} and {binaryExpression.RightExpression.Type.Name} " +
+                            $"at line {binaryExpression.Position.LineNumber}, column {binaryExpression.Position.PositionInLine}");
                     }
                 }
                 else
                 {
                     if (GetArgumentType(opDeclaration.Type, 0) != binaryExpression.LeftExpression.Type)
                     {
-                        // Error: Left hand expression is wrong type
+                        Reporter.ReportError($"{opDeclaration.Name} expects a " +
+                            $"{opDeclaration.Type.Parameters[0].type.Name} on the lefthand side but was given a {binaryExpression.LeftExpression.Type.Name} " +
+                            $"at line {binaryExpression.Position.LineNumber}, column {binaryExpression.Position.PositionInLine}");
                     }
                     if (GetArgumentType(opDeclaration.Type, 1) != binaryExpression.RightExpression.Type)
                     {
-                        // Error: Right hand expression is wrong type
+                        Reporter.ReportError($"{opDeclaration.Name} expects a " +
+                            $"{opDeclaration.Type.Parameters[1].type.Name} on the righthand side but was given a {binaryExpression.RightExpression.Type.Name} " +
+                            $"at line {binaryExpression.Position.LineNumber}, column {binaryExpression.Position.PositionInLine}");
                     }
                 }
                 binaryExpression.Type = GetReturnType(opDeclaration.Type);
@@ -288,7 +306,8 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(idExpression.Identifier);
             if (!(idExpression.Identifier.Declaration is IEntityDeclarationNode declaration))
             {
-                // Error: identifier is not a variable or constant
+                Reporter.ReportError($"{idExpression.Identifier.IdentifierToken.Spelling} is not a variable or constant" +
+                    $"at line {idExpression.Position.LineNumber}, column {idExpression.Position.PositionInLine}");
             }
             else
                 idExpression.Type = declaration.EntityType;
@@ -314,13 +333,16 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(unaryExpression.Expression);
             if (!(unaryExpression.Op.Declaration is UnaryOperationDeclarationNode opDeclaration))
             {
-                // Error: operator is not a unary operator
+                Reporter.ReportError($"{unaryExpression.Op.OperatorToken.Spelling} is being used as a unary operator but is not one " +
+                    $"at line {unaryExpression.Position.LineNumber}, column {unaryExpression.Position.PositionInLine}");
             }
             else
             {
                 if (GetArgumentType(opDeclaration.Type, 0) != unaryExpression.Expression.Type)
                 {
-                    // Error: expression is the wrong type
+                    Reporter.ReportError($"{opDeclaration.Name} expects a " +
+                        $"{opDeclaration.Type.Parameters.First().type.Name} but was given a {unaryExpression.Expression.Type.Name} " +
+                        $"at line {unaryExpression.Position.LineNumber}, column {unaryExpression.Position.PositionInLine}");
                 }
                 unaryExpression.Type = GetReturnType(opDeclaration.Type);
             }
@@ -334,7 +356,6 @@ namespace Compiler.SemanticAnalysis
         /// <param name="blankParameter">The node to perform type checking on</param>
         private void PerformTypeCheckingOnBlankParameter(BlankParameterNode blankParameter)
         {
-            blankParameter.Type = StandardEnvironment.VoidType;
         }
 
         /// <summary>
@@ -356,7 +377,9 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(varParameter.Identifier);
             if (!(varParameter.Identifier.Declaration is IVariableDeclarationNode varDeclaration))
             {
-                // Error: identifier is not a variable
+                Reporter.ReportError($"Trying to pass something which is not a variable to a function's var parameter " +
+                    $"at line {varParameter.Position.LineNumber}, column {varParameter.Position.PositionInLine}" +
+                    $": {varParameter.Identifier.IdentifierToken.Spelling}");
             }
             else
                 varParameter.Type = varDeclaration.EntityType;
@@ -373,7 +396,9 @@ namespace Compiler.SemanticAnalysis
             PerformTypeChecking(typeDenoter.Identifier);
             if (!(typeDenoter.Identifier.Declaration is SimpleTypeDeclarationNode declaration))
             {
-                // Error: identifier is not a type
+                Reporter.ReportError($"Unknown type used in declaration " +
+                    $"at line {typeDenoter.Position.LineNumber}, column {typeDenoter.Position.PositionInLine}" +
+                    $": {typeDenoter.Identifier.IdentifierToken.Spelling}");
             }
             else
                 typeDenoter.Type = declaration;
@@ -389,7 +414,8 @@ namespace Compiler.SemanticAnalysis
         {
             if (characterLiteral.Value < short.MinValue || characterLiteral.Value > short.MaxValue)
             {
-                // Error - value too big         
+                Reporter.ReportError($"Value is outwith permitted range " +
+                    $"at line {characterLiteral.Position.LineNumber}, column {characterLiteral.Position.PositionInLine}");
             }
         }
 
@@ -409,7 +435,8 @@ namespace Compiler.SemanticAnalysis
         {
             if (integerLiteral.Value < short.MinValue || integerLiteral.Value > short.MaxValue)
             {
-                // Error - value too big
+                Reporter.ReportError($"Value is outwith permitted range " +
+                    $"at line {integerLiteral.Position.LineNumber}, column {integerLiteral.Position.PositionInLine}");
             }
         }
 
